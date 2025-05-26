@@ -1,0 +1,38 @@
+mcpServers:
+  weather-mcp-server:
+    command: python
+    args: ["app.py"]
+    env:
+      OPENWEATHER_API_KEY: "6b2e97b1b6559436aee37b83b71412b3"
+    description: "OpenWeather API kullanarak hava durumu bilgilerini sağlayan MCP server"
+    
+# MCP Server konfigürasyonu
+name: "weather-mcp-server"
+version: "1.0.0"
+description: "Hava durumu bilgilerini sağlayan MCP server"
+
+# Build konfigürasyonu
+build:
+  dockerfile: "Dockerfile"
+  context: "."
+  
+# Runtime konfigürasyonu  
+runtime:
+  type: "mcp-server"
+  protocol: "stdio"
+  
+# Metadata
+metadata:
+  author: "Weather MCP Team"
+  license: "MIT"
+  repository: "https://github.com/example/weather-mcp-server"
+  
+# Araçlar
+tools:
+  - name: "get_weather"
+    description: "Belirtilen şehir için güncel hava durumu bilgilerini al"
+    parameters:
+      city:
+        type: "string"
+        description: "Hava durumu bilgisi alınacak şehir adı"
+        required: true

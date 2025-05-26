@@ -1,74 +1,61 @@
-from flask import Flask, request, jsonify
-import requests
+#!/usr/bin/env python3
+"""
+Hava Durumu MCP Server
+OpenWeather API kullanarak hava durumu bilgilerini sağlayan MCP server
+"""
+
+import asyncio
 import os
+import sys
+from typing import Any, Sequence
+import requests
 from dotenv import load_dotenv
+
+from mcp.server import Server
+from mcp import types
 
 # .env dosyasını yükle
 load_dotenv()
-
-app = Flask(__name__)
 
 # OpenWeather API konfigürasyonu
 OPENWEATHER_API_KEY = os.getenv('OPENWEATHER_API_KEY')
 OPENWEATHER_BASE_URL = "http://api.openweathermap.org/data/2.5/weather"
 
-@app.route('/weather', methods=['GET'])
-def get_weather():
-    """
-    Hava durumu bilgilerini dönen endpoint
-    Query parametresi: city (zorunlu)
-    """
+# MCP Server oluştur
+server = Server("weather-mcp-server")
+
+async def get_weather_data(city: str) -> dict:
+    """OpenWeather API'den hava durumu verilerini al"""
+
+    # API anahtarı kontrolü
+    if not OPENWEATHER_API_KEY or OPENWEATHER_API_KEY == 'your_api_key_here':
+        raise ValueError("API anahtarı bulunamadı. Lütfen .env dosyasında OPENWEATHER_API_KEY değerini ayarlayın")
+
+    # OpenWeather API'ye istek parametreleri
+    params = {
+        'q': city,
+        'appid': OPENWEATHER_API_KEY,
+        'units': 'metric',  # Celsius için
+        'lang': 'tr'  # Türkçe açıklamalar için
+    }
+
     try:
-        # Şehir parametresini al
-        city = request.args.get('city')
-        
-        # Şehir parametresi kontrolü
-        if not city:
-            return jsonify({
-                'error': 'Şehir parametresi gereklidir',
-                'message': 'Lütfen city parametresini gönderin. Örnek: /weather?city=Istanbul'
-            }), 400
-        
-        # API anahtarı kontrolü
-        if not OPENWEATHER_API_KEY or OPENWEATHER_API_KEY == 'your_api_key_here':
-            return jsonify({
-                'error': 'API anahtarı bulunamadı',
-                'message': 'Lütfen .env dosyasında OPENWEATHER_API_KEY değerini ayarlayın'
-            }), 500
-        
-        # OpenWeather API'ye istek parametreleri
-        params = {
-            'q': city,
-            'appid': OPENWEATHER_API_KEY,
-            'units': 'metric',  # Celsius için
-            'lang': 'tr'  # Türkçe açıklamalar için
-        }
-        
         # OpenWeather API'ye GET isteği gönder
         response = requests.get(OPENWEATHER_BASE_URL, params=params, timeout=10)
-        
+
         # API yanıt kontrolü
         if response.status_code == 404:
-            return jsonify({
-                'error': 'Şehir bulunamadı',
-                'message': f'"{city}" şehri bulunamadı. Lütfen geçerli bir şehir adı girin.'
-            }), 404
-        
+            raise ValueError(f'"{city}" şehri bulunamadı. Lütfen geçerli bir şehir adı girin.')
+
         if response.status_code == 401:
-            return jsonify({
-                'error': 'API anahtarı geçersiz',
-                'message': 'OpenWeather API anahtarınız geçersiz. Lütfen kontrol edin.'
-            }), 401
-        
+            raise ValueError('OpenWeather API anahtarınız geçersiz. Lütfen kontrol edin.')
+
         if response.status_code != 200:
-            return jsonify({
-                'error': 'API hatası',
-                'message': f'OpenWeather API hatası: {response.status_code}'
-            }), 500
-        
+            raise ValueError(f'OpenWeather API hatası: {response.status_code}')
+
         # JSON verisini parse et
         weather_data = response.json()
-        
+
         # Yanıt verisini formatla
         result = {
             'city': weather_data['name'],
@@ -81,58 +68,90 @@ def get_weather():
             'feels_like': round(weather_data['main']['feels_like'], 1),
             'timestamp': weather_data['dt']
         }
-        
-        return jsonify(result), 200
-        
+
+        return result
+
     except requests.exceptions.Timeout:
-        return jsonify({
-            'error': 'Zaman aşımı',
-            'message': 'API isteği zaman aşımına uğradı. Lütfen tekrar deneyin.'
-        }), 408
-        
+        raise ValueError('API isteği zaman aşımına uğradı. Lütfen tekrar deneyin.')
+
     except requests.exceptions.ConnectionError:
-        return jsonify({
-            'error': 'Bağlantı hatası',
-            'message': 'API\'ye bağlanılamadı. İnternet bağlantınızı kontrol edin.'
-        }), 503
-        
+        raise ValueError('API\'ye bağlanılamadı. İnternet bağlantınızı kontrol edin.')
+
+@server.list_tools()
+async def handle_list_tools() -> list[types.Tool]:
+    """
+    MCP client'a mevcut araçları listele
+    """
+    return [
+        types.Tool(
+            name="get_weather",
+            description="Belirtilen şehir için güncel hava durumu bilgilerini al",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "city": {
+                        "type": "string",
+                        "description": "Hava durumu bilgisi alınacak şehir adı (örn: Istanbul, Ankara, London)"
+                    }
+                },
+                "required": ["city"]
+            }
+        )
+    ]
+
+@server.call_tool()
+async def handle_call_tool(name: str, arguments: dict | None) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    """
+    MCP client'dan gelen araç çağrılarını işle
+    """
+    if name != "get_weather":
+        raise ValueError(f"Bilinmeyen araç: {name}")
+
+    if not arguments or "city" not in arguments:
+        raise ValueError("city parametresi gereklidir")
+
+    city = arguments["city"]
+
+    try:
+        weather_data = await get_weather_data(city)
+
+        # Sonucu formatla
+        result_text = f"""🌤️ {weather_data['city']}, {weather_data['country']} Hava Durumu:
+
+🌡️ Sıcaklık: {weather_data['temperature']}°C (Hissedilen: {weather_data['feels_like']}°C)
+☁️ Durum: {weather_data['description']}
+💧 Nem: {weather_data['humidity']}%
+🌬️ Rüzgar: {weather_data['wind_speed']} m/s
+📊 Basınç: {weather_data['pressure']} hPa
+
+📅 Güncelleme: {weather_data['timestamp']}"""
+
+        return [
+            types.TextContent(
+                type="text",
+                text=result_text
+            )
+        ]
+
     except Exception as e:
-        return jsonify({
-            'error': 'Sunucu hatası',
-            'message': f'Beklenmeyen bir hata oluştu: {str(e)}'
-        }), 500
+        return [
+            types.TextContent(
+                type="text",
+                text=f"❌ Hata: {str(e)}"
+            )
+        ]
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    """
-    Servis sağlık kontrolü endpoint'i
-    """
-    return jsonify({
-        'status': 'healthy',
-        'service': 'Weather MCP Service',
-        'version': '1.0.0'
-    }), 200
+async def main():
+    # Stdin/stdout üzerinden MCP protokolü ile iletişim
+    from mcp.server import stdio
+    async with stdio.stdio_server() as (read_stream, write_stream):
+        await server.run(
+            read_stream,
+            write_stream,
+            server.create_initialization_options()
+        )
 
-@app.route('/', methods=['GET'])
-def home():
-    """
-    Ana sayfa - API kullanım bilgileri
-    """
-    return jsonify({
-        'message': 'Hava Durumu MCP Servisi',
-        'endpoints': {
-            '/weather': 'GET - Hava durumu bilgisi (city parametresi gerekli)',
-            '/health': 'GET - Servis sağlık kontrolü',
-            '/': 'GET - Bu bilgi sayfası'
-        },
-        'example': '/weather?city=Istanbul',
-        'documentation': 'city parametresi ile şehir adını gönderin'
-    }), 200
-
-if __name__ == '__main__':
-    print("🌤️  Hava Durumu MCP Servisi başlatılıyor...")
-    print("📍 Servis adresi: http://0.0.0.0:5000")
-    print("🔗 Örnek kullanım: http://0.0.0.0:5000/weather?city=Istanbul")
-    print("⚠️  .env dosyasında OPENWEATHER_API_KEY değerini ayarlamayı unutmayın!")
-    
-    app.run(host='0.0.0.0', port=5000, debug=True)
+if __name__ == "__main__":
+    print("🌤️ Hava Durumu MCP Server başlatılıyor...")
+    print("📡 MCP protokolü ile iletişim kuruluyor...")
+    asyncio.run(main())
