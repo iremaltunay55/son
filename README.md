@@ -32,6 +32,11 @@ pip install -r requirements.txt
 OPENWEATHER_API_KEY=your_actual_api_key_here
 ```
 
+⚠️ **GÜVENLİK UYARISI**:
+- `.env` dosyası `.gitignore`'da yer alır ve GitHub'a yüklenmez
+- API anahtarınızı asla kod içinde hardcode etmeyin
+- Production'da environment variables kullanın
+
 ### 3. MCP Server'ı Başlatma
 
 ```bash
@@ -91,8 +96,10 @@ git push origin main
 
 ### 3. Environment Variables
 
-Smithery dashboard'da şu environment variable'ı ayarlayın:
-- `OPENWEATHER_API_KEY`: OpenWeather API anahtarınız
+**Smithery/Railway/Render dashboard'da** şu environment variable'ı ayarlayın:
+- `OPENWEATHER_API_KEY`: `your_actual_api_key_here`
+
+**ÖNEMLİ**: API anahtarınızı platform dashboard'ından ekleyin, kod içinde yazmayın!
 
 ## Docker ile Çalıştırma
 

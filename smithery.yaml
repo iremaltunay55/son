@@ -3,4 +3,4 @@ mcpServers:
     command: python
     args: ["app.py"]
     env:
-      OPENWEATHER_API_KEY: "6b2e97b1b6559436aee37b83b71412b3"
+      OPENWEATHER_API_KEY: "${OPENWEATHER_API_KEY}"
